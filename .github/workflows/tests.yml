@@ -19,9 +19,12 @@ permissions:
 
 jobs:
   test:
+    defaults:
+      run:
+        shell: bash
     strategy:
       matrix:
-        go-version: [1.x, 1.19.x]
+        go-version: [1.x, 1.22.0] # test with N and the .0 release of N-1
         platform: [ubuntu-latest]
         include:
           # include windows, but only with the latest Go version, since there
@@ -36,20 +39,19 @@ jobs:
     runs-on: ${{ matrix.platform }}
 
     steps:
-    - uses: actions/setup-go@v4
+    - uses: actions/setup-go@3041bf56c941b39c61721a86cd11f3bb1338122a # v5.2.0
       with:
         go-version: ${{ matrix.go-version }}
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-    # Get values for cache paths to be used in later steps 
+    # Get values for cache paths to be used in later steps
     - id: cache-paths
       run: |
         echo "go-cache=$(go env GOCACHE)" >> $GITHUB_OUTPUT
         echo "go-mod-cache=$(go env GOMODCACHE)" >> $GITHUB_OUTPUT
-      shell: bash
 
     - name: Cache go modules
-      uses: actions/cache@v3
+      uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
       with:
         path: |
           ${{ steps.cache-paths.outputs.go-cache }}
@@ -57,29 +59,18 @@ jobs:
         key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
         restore-keys: ${{ runner.os }}-go-
 
-    - name: Ensure go generate produces a zero diff
-      shell: bash
-      run: go generate -x ./... && git diff --exit-code; code=$?; git checkout -- .; (exit $code)
-
     - name: Run go test
-      run: go test -v -race -coverprofile coverage.txt -covermode atomic ./...
+      run: |
+        if [ -n "${{ matrix.update-coverage }}" ]; then
+          script/test.sh -race -covermode atomic -coverprofile coverage.txt ./...
+          exit
+        fi
+        script/test.sh -race -covermode atomic ./...
 
     - name: Ensure integration tests build
       # don't actually run tests since they hit live GitHub API
       run: go test -v -tags=integration -run=^$ ./test/integration
 
-    - name: Run scrape tests
-      run: |
-        cd scrape
-        go test ./...
-
     - name: Upload coverage to Codecov
       if: ${{ matrix.update-coverage }}
-      uses: codecov/codecov-action@eaaf4bedf32dbdc6b720b63067d99c4d77d6047d #v3.1.4
-
-    - name: Ensure go generate produces a zero diff for update-urls
-      shell: bash
-      run: cd update-urls && go generate -x ./... && git diff --exit-code; code=$?; git checkout -- .; (exit $code)
-
-    - name: Run go test for update-urls
-      run: cd update-urls && go test -v -race ./...
+      uses: codecov/codecov-action@1e68e06f1dbfde0e4cefc87efeba9e4643565303 # v5.1.2
